@@ -2,8 +2,21 @@
 #include <pybind11/numpy.h>
 #include <cmath>
 #include <iostream>
+#include <vector>
 
 namespace py = pybind11;
+
+void matmul(const float *A, const float *B, float *C, size_t m, size_t n, size_t p) {
+  for (size_t i = 0; i < m; i++) {
+    for (size_t j = 0; j < p; j++) {
+      float sum = 0;
+      for (size_t k = 0; k < n; k++) {
+        sum += A[i * n + k] * B[k * p + j];
+      }
+      C[i * p + j] = sum;
+    }
+  }
+}
 
 
 void softmax_regression_epoch_cpp(const float *X, const unsigned char *y,
@@ -33,7 +46,59 @@ void softmax_regression_epoch_cpp(const float *X, const unsigned char *y,
      */
 
     /// BEGIN YOUR CODE
+    size_t num_iterations = (m + batch - 1) / batch;
+    for (size_t iter = 0; iter < num_iterations; iter++) {
+      // The size of the last batch may be less than previous batches
+      size_t cur_batch = std::min(batch, m - iter * batch);
+      
+      const float *x_batch = &X[iter * batch * n];
+      const unsigned char *y_batch = &y[iter * batch];
+      std::vector<float> Z(cur_batch * k);
 
+      // 1. Compute logits: Z = x_batch @ theta
+      for (size_t i = 0; i < cur_batch; i++) {
+        for (size_t j = 0; j < k; j++) {
+          float sum = 0;
+          for (size_t l = 0; l < n; l++) {
+            sum += x_batch[i * n + l] * theta[l * k + j];
+          }
+          Z[i * k + j] = sum;
+        }
+      }
+
+      // 2. Compute softmax probabilities: Z = normalize(exp(Z))
+      for (size_t i = 0; i < cur_batch; i++) {
+        float row_sum = 0;
+        for (size_t j = 0; j < k; j++) {
+          Z[i * k + j] = exp(Z[i * k + j]);
+          row_sum += Z[i * k + j];
+        }
+        for (size_t j = 0; j < k; j++) {
+          Z[i * k + j] /= row_sum;
+        }
+      }
+
+      // 3. Subtract one-hot encoding: Z = Z - I_y
+      for (size_t i = 0; i < cur_batch; i++) {
+        Z[i * k + y_batch[i]] -= 1;
+      }
+
+      // 4. Compute gradient without explicit transpose
+      // grad = (1/m) * x_batch_T @ Z
+      std::vector<float> grad(n * k);
+      for (size_t i = 0; i < cur_batch; i++) {
+        for (size_t j = 0; j < n; j++) {
+          for (size_t l = 0; l < k; l++) {
+            grad[j * k + l] += x_batch[i * n + j] * Z[i * k + l];
+          }
+        }
+      }
+
+      // 5. Update theta
+      for (size_t i = 0; i < n * k; i++) {
+        theta[i] -= (lr / cur_batch) * grad[i];
+      }
+    }
     /// END YOUR CODE
 }
 
