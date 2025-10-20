@@ -1,7 +1,4 @@
-from . import ops
+from . import init, ops
+from .autograd import Tensor, cpu  # all_devices is not used
+from .init import ones, ones_like, zeros, zeros_like
 from .ops import *
-from .autograd import Tensor, cpu, all_devices
-
-from . import init
-from .init import ones, zeros, zeros_like, ones_like
-

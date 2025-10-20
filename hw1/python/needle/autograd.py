@@ -1,11 +1,13 @@
 """Core data structures."""
-import needle
-from .backend_numpy import Device, cpu, all_devices
-from typing import List, Optional, NamedTuple, Tuple, Union, Dict
-from collections import namedtuple
+
+from typing import Dict, List, Optional, Tuple, Union
+
 import numpy
 
+import needle
 from needle import init
+
+from .backend_numpy import Device, cpu
 
 # needle version
 LAZY_MODE = False
@@ -15,6 +17,7 @@ TENSOR_COUNTER = 0
 # as the backend for our computations, this line will change in later homeworks
 
 import numpy as array_api
+
 NDArray = numpy.ndarray
 
 
@@ -122,7 +125,7 @@ class Value:
         *,
         num_outputs: int = 1,
         cached_data: List[object] = None,
-        requires_grad: Optional[bool] = None
+        requires_grad: Optional[bool] = None,
     ):
         global TENSOR_COUNTER
         TENSOR_COUNTER += 1
@@ -200,7 +203,7 @@ class Tensor(Value):
         device: Optional[Device] = None,
         dtype=None,
         requires_grad=True,
-        **kwargs
+        **kwargs,
     ):
         if isinstance(array, Tensor):
             if device is None:
@@ -362,8 +365,6 @@ class Tensor(Value):
     __rmul__ = __mul__
 
 
-
-
 def compute_gradient_of_variables(output_tensor, out_grad):
     """Take gradient of output node with respect to each node in node_list.
 
@@ -380,7 +381,21 @@ def compute_gradient_of_variables(output_tensor, out_grad):
     reverse_topo_order = list(reversed(find_topo_sort([output_tensor])))
 
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    for node in reverse_topo_order:
+        output_grads = node_to_output_grads_list[node]
+        node.grad = sum_node_list(output_grads)
+
+        # Skip leaf node
+        if node.op is None:
+            continue
+
+        # Compute the gradients with respect to the input nodes.
+        input_grads = node.op.gradient_as_tuple(node.grad, node)
+        for input_node, input_grad in zip(node.inputs, input_grads):
+            if input_node not in node_to_output_grads_list:
+                node_to_output_grads_list[input_node] = [input_grad]
+            else:
+                node_to_output_grads_list[input_node].append(input_grad)
     ### END YOUR SOLUTION
 
 
@@ -393,14 +408,23 @@ def find_topo_sort(node_list: List[Value]) -> List[Value]:
     sort.
     """
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    visited = set()
+    topo_order = []
+    for node in node_list:
+        if node not in visited:
+            topo_sort_dfs(node, visited, topo_order)
+    return topo_order
     ### END YOUR SOLUTION
 
 
 def topo_sort_dfs(node, visited, topo_order):
     """Post-order DFS"""
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    visited.add(node)
+    for pred in node.inputs:
+        if pred not in visited:
+            topo_sort_dfs(pred, visited, topo_order)
+    topo_order.append(node)
     ### END YOUR SOLUTION
 
 
@@ -411,7 +435,7 @@ def topo_sort_dfs(node, visited, topo_order):
 
 def sum_node_list(node_list):
     """Custom sum function in order to avoid create redundant nodes in Python sum implementation."""
-    from operator import add
     from functools import reduce
+    from operator import add
 
     return reduce(add, node_list)

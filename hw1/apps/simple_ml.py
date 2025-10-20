@@ -1,10 +1,9 @@
 """hw1/apps/simple_ml.py"""
 
-import struct
 import gzip
-import numpy as np
-
 import sys
+
+import numpy as np
 
 sys.path.append("python/")
 import needle as ndl
@@ -33,7 +32,29 @@ def parse_mnist(image_filename, label_filename):
                 for MNIST will contain the values 0-9.
     """
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    with gzip.open(image_filename, "rb") as f:
+        # Read the header info: magic number, number of images, rows, and columns.
+        # The '>I' dtype specifies big-endian unsigned 4-byte integers.
+        _, num_images, num_rows, num_cols = np.frombuffer(f.read(16), dtype=">I")
+
+        # Read the rest of the file, which contains all the raw pixel data.
+        pixel_data = np.frombuffer(f.read(), dtype=np.uint8)
+
+        # Reshape the 1D pixel array into a 2D matrix.
+        # Each row corresponds to a flattened 28x28 image (784 pixels).
+        X = pixel_data.reshape(num_images, num_rows * num_cols)
+
+        # Normalize pixel values to the [0.0, 1.0] range.
+        X = np.divide(X, 255, dtype=np.float32)
+
+    with gzip.open(label_filename, "rb") as f:
+        # Read and discard the 8-byte header (magic number, number of labels).
+        np.frombuffer(f.read(8), dtype=">I")
+
+        # Read the rest of the file, which contains the label for each image.
+        y = np.frombuffer(f.read(), dtype=np.uint8)
+
+    return X, y
     ### END YOUR SOLUTION
 
 
@@ -54,7 +75,18 @@ def softmax_loss(Z, y_one_hot):
         Average softmax loss over the sample. (ndl.Tensor[np.float32])
     """
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+
+    # Calculate the log-sum-exp term for each example
+    log_sum_exp = ndl.log(ndl.summation(ndl.exp(Z), axes=1))
+
+    # Calculate the logit of correct class for each example
+    correct_class_logits = ndl.summation(Z * y_one_hot, axes=1)
+
+    # Calculate the loss for each example
+    loss_per_example = log_sum_exp - correct_class_logits
+    batch_size = Z.shape[0]
+
+    return ndl.summation(loss_per_example) / batch_size
     ### END YOUR SOLUTION
 
 
@@ -83,7 +115,31 @@ def nn_epoch(X, y, W1, W2, lr=0.1, batch=100):
     """
 
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    num_examples = X.shape[0]
+    num_classes = W2.shape[1]
+    for i in range(0, num_examples, batch):
+        X_batch = ndl.Tensor(X[i : i + batch])
+        y_batch = y[i : i + batch]
+
+        # `m` may be less than `batch` if the last batch is smaller.
+        m = X_batch.shape[0]
+
+        # Create the one-hot encoding of the true labels.
+        y_one_hot = np.zeros((m, num_classes), dtype=np.float32)
+        y_one_hot[np.arange(m), y_batch] = 1
+
+        # Compute the logits.
+        Z = ndl.relu(X_batch @ W1) @ W2
+
+        # Compute the loss and gradients.
+        loss = softmax_loss(Z, ndl.Tensor(y_one_hot))
+        loss.backward()
+
+        # Update the parameters.
+        W1 -= lr * W1.grad
+        W2 -= lr * W2.grad
+
+    return W1, W2
     ### END YOUR SOLUTION
 
 
