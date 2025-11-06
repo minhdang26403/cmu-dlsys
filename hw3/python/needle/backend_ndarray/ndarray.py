@@ -1,12 +1,13 @@
-import math
 import operator
 from functools import reduce
 from typing import Any, Callable, Iterable, Union
 
 import numpy as np
 
-from . import ndarray_backend_numpy
-from . import ndarray_backend_cpu  # type: ignore[attr-defined]
+from . import (
+    ndarray_backend_cpu,  # type: ignore[attr-defined]
+    ndarray_backend_numpy,
+)
 
 
 # math.prod not in Python 3.7
@@ -51,7 +52,9 @@ class BackendDevice:
         assert dtype == "float32"
         return NDArray.make(shape, device=self)
 
-    def full(self, shape: tuple[int, ...], fill_value: float, dtype: str = "float32") -> "NDArray":
+    def full(
+        self, shape: tuple[int, ...], fill_value: float, dtype: str = "float32"
+    ) -> "NDArray":
         dtype = "float32" if dtype is None else dtype
         assert dtype == "float32"
         arr = self.empty(shape, dtype)
@@ -237,7 +240,11 @@ class NDArray:
         """Restride the matrix without copying memory."""
         assert len(shape) == len(strides)
         return NDArray.make(
-            shape, strides=strides, device=self.device, handle=self._handle, offset=self._offset
+            shape,
+            strides=strides,
+            device=self.device,
+            handle=self._handle,
+            offset=self._offset,
         )
 
     @property
@@ -262,7 +269,20 @@ class NDArray:
         """
 
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        if prod(self.shape) != prod(new_shape):
+            raise ValueError(
+                "Product of current shape is not equal to the product of the new shape"
+            )
+        if not self.is_compact():
+            raise ValueError("Array is not compact")
+
+        return NDArray.make(
+            new_shape,
+            NDArray.compact_strides(new_shape),
+            self.device,
+            self._handle,
+            self._offset,
+        )
         ### END YOUR SOLUTION
 
     def permute(self, new_axes: tuple[int, ...]) -> "NDArray":
@@ -287,7 +307,16 @@ class NDArray:
         """
 
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        new_shape = tuple(self.shape[i] for i in new_axes)
+        new_strides = tuple(self.strides[i] for i in new_axes)
+
+        return NDArray.make(
+            new_shape,
+            new_strides,
+            self.device,
+            self._handle,
+            self._offset,
+        )
         ### END YOUR SOLUTION
 
     def broadcast_to(self, new_shape: tuple[int, ...]) -> "NDArray":
@@ -311,7 +340,28 @@ class NDArray:
         """
 
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        assert len(new_shape) == len(self.shape), (
+            "New shape must have the same number of dimensions as the original shape"
+        )
+
+        for x, y in zip(self.shape, new_shape):
+            assert x == y or x == 1, (
+                "New shape must have the same dimensions as the original shape, "
+                "or the dimension must be 1"
+            )
+
+        new_strides = tuple(
+            0 if x != y else self.strides[i]
+            for i, (x, y) in enumerate(zip(self.shape, new_shape))
+        )
+
+        return NDArray.make(
+            new_shape,
+            tuple(new_strides),
+            self.device,
+            self._handle,
+            self._offset,
+        )
         ### END YOUR SOLUTION]
 
     ### Get and set elements
@@ -378,10 +428,26 @@ class NDArray:
         assert len(slices) == self.ndim, "Need indexes equal to number of dimensions"
 
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        new_shape = tuple((s.stop - s.start + s.step - 1) // s.step for s in slices)
+        new_strides = tuple(stride * s.step for stride, s in zip(self.strides, slices))
+        new_offset = self._offset
+        for stride, s in zip(self.strides, slices):
+            new_offset += stride * s.start
+
+        return NDArray.make(
+            new_shape,
+            new_strides,
+            self.device,
+            self._handle,
+            new_offset,
+        )
         ### END YOUR SOLUTION
 
-    def __setitem__(self, idxs: int | slice | tuple[int | slice, ...], other: Union["NDArray", float]) -> None:
+    def __setitem__(
+        self,
+        idxs: int | slice | tuple[int | slice, ...],
+        other: Union["NDArray", float],
+    ) -> None:
         """Set the values of a view into an array, using the same semantics
         as __getitem__()."""
         view = self.__getitem__(idxs)
@@ -551,14 +617,16 @@ class NDArray:
             return out
 
     ### Reductions, i.e., sum/max over all element or over given axis
-    def reduce_view_out(self, axis: int | tuple[int, ...] | list[int] | None, keepdims: bool = False) -> tuple["NDArray", "NDArray"]:
-        """ Return a view to the array set up for reduction functions and output array. """
+    def reduce_view_out(
+        self, axis: int | tuple[int, ...] | list[int] | None, keepdims: bool = False
+    ) -> tuple["NDArray", "NDArray"]:
+        """Return a view to the array set up for reduction functions and output array."""
         if isinstance(axis, tuple) and not axis:
             raise ValueError("Empty axis in reduce")
 
         if axis is None:
             view = self.compact().reshape((1,) * (self.ndim - 1) + (prod(self.shape),))
-            #out = NDArray.make((1,) * self.ndim, device=self.device)
+            # out = NDArray.make((1,) * self.ndim, device=self.device)
             out = NDArray.make((1,), device=self.device)
 
         else:
@@ -571,37 +639,53 @@ class NDArray:
             )
             out = NDArray.make(
                 tuple([1 if i == axis else s for i, s in enumerate(self.shape)])
-                if keepdims else
-                tuple([s for i, s in enumerate(self.shape) if i != axis]),
+                if keepdims
+                else tuple([s for i, s in enumerate(self.shape) if i != axis]),
                 device=self.device,
             )
         return view, out
 
-    def sum(self, axis: int | tuple[int, ...] | list[int] | None = None, keepdims: bool = False) -> "NDArray":
+    def sum(
+        self,
+        axis: int | tuple[int, ...] | list[int] | None = None,
+        keepdims: bool = False,
+    ) -> "NDArray":
         view, out = self.reduce_view_out(axis, keepdims=keepdims)
         self.device.reduce_sum(view.compact()._handle, out._handle, view.shape[-1])
         return out
 
-    def max(self, axis: int | tuple[int, ...] | list[int] | None = None, keepdims: bool = False) -> "NDArray":
+    def max(
+        self,
+        axis: int | tuple[int, ...] | list[int] | None = None,
+        keepdims: bool = False,
+    ) -> "NDArray":
         view, out = self.reduce_view_out(axis, keepdims=keepdims)
         self.device.reduce_max(view.compact()._handle, out._handle, view.shape[-1])
         return out
 
 
-
-def array(a: Any, dtype: str = "float32", device: BackendDevice | None = None) -> NDArray:
+def array(
+    a: Any, dtype: str = "float32", device: BackendDevice | None = None
+) -> NDArray:
     """Convenience methods to match numpy a bit more closely."""
     dtype = "float32" if dtype is None else dtype
     assert dtype == "float32"
     return NDArray(a, device=device)
 
 
-def empty(shape: tuple[int, ...], dtype: str = "float32", device: BackendDevice | None = None) -> NDArray:
+def empty(
+    shape: tuple[int, ...], dtype: str = "float32", device: BackendDevice | None = None
+) -> NDArray:
     device = device if device is not None else default_device()
     return device.empty(shape, dtype)
 
 
-def full(shape: tuple[int, ...], fill_value: float, dtype: str = "float32", device: BackendDevice | None = None) -> NDArray:
+def full(
+    shape: tuple[int, ...],
+    fill_value: float,
+    dtype: str = "float32",
+    device: BackendDevice | None = None,
+) -> NDArray:
     device = device if device is not None else default_device()
     return device.full(shape, fill_value, dtype)
 
@@ -630,7 +714,7 @@ def tanh(a: NDArray) -> NDArray:
     return a.tanh()
 
 
-def sum(a: NDArray, axis: int | tuple[int] | list[int] | None = None, keepdims: bool = False) -> NDArray:
+def sum(
+    a: NDArray, axis: int | tuple[int] | list[int] | None = None, keepdims: bool = False
+) -> NDArray:
     return a.sum(axis=axis, keepdims=keepdims)
-
-
