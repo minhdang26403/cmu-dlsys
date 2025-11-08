@@ -10,6 +10,7 @@ namespace needle {
 namespace cuda {
 
 #define BASE_THREAD_NUM 256
+#define PER_DIM_THREAD_NUM 16
 
 #define TILE 4
 typedef float scalar_t;
@@ -45,9 +46,9 @@ CudaDims CudaOneDim(size_t size) {
 
 CudaDims CudaTwoDim(size_t rows, size_t cols) {
   CudaDims dim;
-  size_t num_blocks_x = (rows + BASE_THREAD_NUM - 1) / BASE_THREAD_NUM;
-  size_t num_blocks_y = (cols + BASE_THREAD_NUM - 1) / BASE_THREAD_NUM;
-  dim.block = dim3(BASE_THREAD_NUM, BASE_THREAD_NUM, 1);
+  size_t num_blocks_x = (rows + PER_DIM_THREAD_NUM - 1) / PER_DIM_THREAD_NUM;
+  size_t num_blocks_y = (cols + PER_DIM_THREAD_NUM - 1) / PER_DIM_THREAD_NUM;
+  dim.block = dim3(PER_DIM_THREAD_NUM, PER_DIM_THREAD_NUM, 1);
   dim.grid = dim3(num_blocks_x, num_blocks_y, 1);
   return dim;
 }
