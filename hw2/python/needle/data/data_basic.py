@@ -68,9 +68,8 @@ class DataLoader:
             self.ordering = np.array_split(
                 arr, range(self.batch_size, len(self.dataset), self.batch_size)
             )
-
-        ### END YOUR SOLUTION
         return self
+        ### END YOUR SOLUTION
 
     def __next__(self):
         ### BEGIN YOUR SOLUTION
